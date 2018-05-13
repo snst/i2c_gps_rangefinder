@@ -12,6 +12,7 @@ extern bool sonarUpdate();
 extern int16_t sonarReadDistance();
 #endif
 
+//#define FAKE_GPS
 
 I2C_REGISTERS   i2c_dataset;
 I2C_REGISTERS   gps_dataset;
@@ -19,7 +20,7 @@ uint32_t        lastReadGPS = 0;
 uint8_t cmd = 0;
 
 
-void gpsSerialInit();
+bool gpsSerialInit();
 bool GPS_NMEA_newFrame(char c);
 
 void _traceGPS()
@@ -40,17 +41,19 @@ void initData()
 {
   memset(&i2c_dataset, 0, sizeof(i2c_dataset));
   memset(&gps_dataset, 0, sizeof(gps_dataset));
-  /*
+}
+
+void fakeGPS()
+{
   i2c_dataset.altitude = 100;
   i2c_dataset.ground_speed = 100;
   i2c_dataset.ground_course = 0;
-  i2c_dataset.gps_loc.lat = 490000000;
-  i2c_dataset.gps_loc.lon = 110000000;
+  i2c_dataset.lat = 490000000;
+  i2c_dataset.lon = 110000000;
   i2c_dataset.status.new_data = 1;
   i2c_dataset.status.gps3dfix = 1;
   i2c_dataset.status.numsats = 6;
   i2c_dataset.hdop = 5;
-  */
 }
 
 
@@ -126,35 +129,36 @@ void setup()
   _D("sonarInit");
 #endif
 
-#ifdef GPS
-  gpsSerialInit();
-  _D("gpsInit");
-#endif
-
   Wire2.begin(I2C_GPS_ADDRESS);
   Wire2.onReceive(receiveEvent);
   Wire2.onRequest(requestEvent);
   _D("-setup");
 }
 
+uint32_t gps_packets = 0;
 
 void loop() 
 {
 #ifdef GPS
-  while (Serial.available()) 
-  {
-    if (GPS_NMEA_newFrame(Serial.read())) 
-    {
-      // We have a valid GGA frame and we have lat and lon in GPS_read_lat and GPS_read_lon, apply moving average filter
-      // this is a little bit tricky since the 1e7/deg precision easily overflow a long, so we apply the filter to the fractions
-      // only, and strip the full degrees part. This means that we have to disable the filter if we are very close to a degree line
 
-      i2c_dataset = gps_dataset;
-      memset(&gps_dataset, 0, sizeof(gps_dataset));
-      lastReadGPS = millis();
-//      _traceGPS();
+  if (gpsSerialInit())
+  {
+    while (Serial.available()) 
+    {
+      if (GPS_NMEA_newFrame(Serial.read())) 
+      {
+        gps_packets++;
+        // We have a valid GGA frame and we have lat and lon in GPS_read_lat and GPS_read_lon, apply moving average filter
+        // this is a little bit tricky since the 1e7/deg precision easily overflow a long, so we apply the filter to the fractions
+        // only, and strip the full degrees part. This means that we have to disable the filter if we are very close to a degree line
+  
+        i2c_dataset = gps_dataset;
+        memset(&gps_dataset, 0, sizeof(gps_dataset));
+        lastReadGPS = millis();
+  //      _traceGPS();
+      } 
     } 
-  } 
+  }
 #endif // GPS
 
   blink_update();
@@ -167,6 +171,9 @@ void loop()
   }
 #endif
 
+#ifdef FAKE_GPS
+  fakeGPS();
+#else
   if(millis() > lastReadGPS + 1200)
   {
     i2c_dataset.status.gps2dfix = 0;
@@ -175,6 +182,7 @@ void loop()
     i2c_dataset.status.new_data = 1;
     lastReadGPS = millis();
   }
+#endif
 }
 
 
@@ -198,9 +206,9 @@ void requestEvent()
   switch(cmd)
   {
     case HCSR04_I2C_REGISTRY_STATUS: {
-      static uint8_t c = 0;
       int16_t val = sonarReadDistance();
-      uint8_t b[] = { c++, val>>8, val&0xFF };
+      uint8_t b[] = { (val == SONAR_OUT_OF_RANGE) ? 1 : 0, val>>8, val&0xFF };
+//      uint8_t b[] = { 0, val>>8, val&0xFF };
       Wire2.write(b, sizeof(b));
     } break;
 
@@ -226,6 +234,16 @@ void requestEvent()
 
     case I2C_GPS_ALTITUDE: {
       Wire2.write((uint8_t*)&i2c_dataset.altitude, 2);
+    } break;
+
+    case I2C_GPS_PACKETS: {
+      Wire2.write((uint8_t*)&gps_packets, 4);
+    } break;
+
+    case I2C_GPS_PING: {
+      static uint8_t count = 0;
+      Wire2.write(&count, 1);
+      count++;
     } break;
 
     default:

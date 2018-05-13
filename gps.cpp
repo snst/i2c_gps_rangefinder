@@ -97,7 +97,6 @@ bool GPS_NMEA_newFrame(char c)
                   if (string[0] == 'G' && string[1] == 'P' && string[2] == 'G' && string[3] == 'S' && string[4] == 'A') gps_frame = GPGSA_FRAME;
                   if (string[0] == 'G' && string[1] == 'P' && string[2] == 'R' && string[3] == 'M' && string[4] == 'C') gps_frame = GPRMC_FRAME;
                 }
-                
                 switch (gps_frame)
                 {
                   //************* GPGGA FRAME parsing
@@ -175,38 +174,64 @@ bool GPS_NMEA_newFrame(char c)
   }
 }
 
+bool hasElapsed(unsigned long *startTime, unsigned long diff)
+{
+  if (millis() > (*startTime + diff)) {
+      *startTime = millis();
+      return true;
+  }
+  return false;
+}
 
-void gpsSerialInit() {
-  
-  delay(500);
-  Serial.begin(9600);            // switch UART speed for sending SET BAUDRATE command
-  delay(500);
-  
-#if (GPS_SERIAL_SPEED==19200)
-  Serial.write("$PMTK251,19200*22\r\n");     // 19200 baud - minimal speed for 5Hz update rate
-#endif  
-#if (GPS_SERIAL_SPEED==38400)
-  Serial.write("$PMTK251,38400*27\r\n");     // 38400 baud
-#ifdef DEBUG_SERIAL
-  debugSerial.println("gps set 38400");
-#endif
-#endif  
-#if (GPS_SERIAL_SPEED==57600)
-  Serial.write("$PMTK251,57600*2C\r\n");     // 57600 baud
-#endif  
-#if (GPS_SERIAL_SPEED==115200)
-  Serial.write("$PMTK251,115200*1F\r\n");    // 115200 baud
-#endif  
-  delay(500);
+bool gpsSerialInit() 
+{
+  static char state = 0;
+  if (state == 6) {
+    return true;
+  }
 
-  // at this point we have GPS working at selected (via #define GPS_BAUD) baudrate
-  Serial.begin(GPS_SERIAL_SPEED);
-  
-  delay(500);
-  Serial.write("$PMTK314,0,1,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0*29\r\n"); // only GGA and RMC sentence
-  delay(500);
-  Serial.write("$PMTK220,100*2F\r\n");
-  delay(500);
+  static unsigned long startTime = millis();
+  if (!hasElapsed(&startTime, 500))
+    return false;
+
+  switch (state) {
+    case 1:
+      Serial.begin(9600);            // switch UART speed for sending SET BAUDRATE command
+      break;
+
+    case 2:
+    #if (GPS_SERIAL_SPEED==19200)
+      Serial.write("$PMTK251,19200*22\r\n");     // 19200 baud - minimal speed for 5Hz update rate
+    #endif  
+    #if (GPS_SERIAL_SPEED==38400)
+      Serial.write("$PMTK251,38400*27\r\n");     // 38400 baud
+    #endif  
+    #if (GPS_SERIAL_SPEED==57600)
+      Serial.write("$PMTK251,57600*2C\r\n");     // 57600 baud
+    #endif  
+    #if (GPS_SERIAL_SPEED==115200)
+      Serial.write("$PMTK251,115200*1F\r\n");    // 115200 baud
+    #endif  
+      break;
+    
+    case 3:
+      // at this point we have GPS working at selected (via #define GPS_BAUD) baudrate
+      Serial.begin(GPS_SERIAL_SPEED);
+      break;
+      
+    case 4:
+      Serial.write("$PMTK314,0,1,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0*29\r\n"); // only GGA and RMC sentence
+      break;
+      
+    case 5:
+      Serial.write("$PMTK220,100*2F\r\n");
+      break;
+      
+    default:
+      break;
+  }
+  state++;
+  return false;
 }
 
 

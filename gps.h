@@ -15,7 +15,8 @@
 #define I2C_GPS_ALTITUDE              33    // GPS altitude in meters (uint16_t)           (Read Only)
 #define I2C_GPS_GROUND_COURSE         35    // GPS ground course (uint16_t)
 #define I2C_GPS_TIME                  39    // UTC Time from GPS in hhmmss.sss * 100 (uint32_t)(unneccesary precision) (Read Only)
-
+#define I2C_GPS_PACKETS               40
+#define I2C_GPS_PING                  41
 
 typedef struct 
 {
